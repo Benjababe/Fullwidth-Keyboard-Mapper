@@ -8,6 +8,12 @@ const WORD FW_ZERO = 0xFF10;
 const WORD FW_CAPS_A = 0xFF21;
 const WORD FW_A = 0xFF41;
 
+/**
+ * @brief Writes unicode character onto keyboard cursor
+ *
+ * @param unicodeChar Character to write
+ * @param keyup Flag whether to send key up or down input
+ */
 void WriteUnicode(WORD unicodeChar, bool keyup)
 {
     INPUT input = {0};
@@ -20,6 +26,31 @@ void WriteUnicode(WORD unicodeChar, bool keyup)
     UINT res = SendInput(1, &input, sizeof(input));
     if (res == 0)
         std::cerr << "Error sending input: " << GetLastError() << std::endl;
+}
+
+/**
+ * @brief Retrieves corresponding fullwidth unicode character if available
+ *
+ * @param vkCode Virtual-Key Code entered
+ * @param useCaps Flag whether CAPS lock is enabled
+ * @param shiftState Flag whether Shift key is currently pressed
+ * @return std::pair<bool, WORD> Bool flag whether to use unicode and the unicode value
+ */
+WORD getUnicodeChar(DWORD vkCode, bool useCaps, bool shiftState)
+{
+    WORD unicodeChar = UNICODE_NOCHAR;
+
+    if ((vkCode >= 0x41 && vkCode <= 0x5A))
+        unicodeChar = ((useCaps) ? FW_CAPS_A : FW_A) + vkCode - 0x41;
+    else if (symbolMap[std::make_pair(vkCode, shiftState)] != 0)
+        unicodeChar = symbolMap[std::make_pair(vkCode, shiftState)];
+    else if ((vkCode >= 0x30 && vkCode <= 0x39) || (vkCode >= 0x60 && vkCode <= 0x69))
+    {
+        DWORD baseCode = (vkCode >= 0x60) ? vkCode - 0x30 : vkCode;
+        unicodeChar = FW_ZERO + baseCode - 0x30;
+    }
+
+    return unicodeChar;
 }
 
 LRESULT CALLBACK KeyboardHookProc(int nCode, WPARAM wParam, LPARAM lParam)
@@ -37,48 +68,26 @@ LRESULT CALLBACK KeyboardHookProc(int nCode, WPARAM wParam, LPARAM lParam)
         case WM_SYSKEYUP:
             PKBDLLHOOKSTRUCT p = (PKBDLLHOOKSTRUCT)lParam;
 
-            // Do not interfere is ctrl is pressed
+            // Do not interfere if ctrl is pressed
             bool ctrlState = ((GetKeyState(VK_CONTROL) & 0x1000) != 0);
             if (ctrlState)
                 break;
 
+            // Retrieve relevant modifier states
             bool capsLockState = ((GetKeyState(VK_CAPITAL) & 0x0001) != 0);
             bool shiftState = ((GetKeyState(VK_SHIFT) & 0x1000) != 0);
             bool useCaps = capsLockState ^ shiftState;
 
-            std::cout << capsLockState << " " << shiftState << std::endl;
-
-            // Handle alpha keys
-            if (fEatKeystroke = (p->vkCode >= 0x41 && p->vkCode <= 0x5A))
+            // Process keyboard input for valid unicode character if available
+            WORD unicodeChar = getUnicodeChar(p->vkCode, useCaps, shiftState);
+            if (fEatKeystroke = (unicodeChar != UNICODE_NOCHAR))
             {
-                WORD unicodeChar = ((useCaps) ? FW_CAPS_A : FW_A) + p->vkCode - 0x41;
                 if ((wParam == WM_KEYDOWN) || (wParam == WM_SYSKEYDOWN))
                     WriteUnicode(unicodeChar, false);
                 else if ((wParam == WM_KEYUP) || (wParam == WM_SYSKEYUP))
                     WriteUnicode(unicodeChar, true);
             }
 
-            // Handle symbol keys
-            // Run this before numeric keys because of number bar symbols
-            else if (fEatKeystroke = (symbolMap[std::make_pair(p->vkCode, shiftState)] != 0))
-            {
-                WORD unicodeChar = symbolMap[std::make_pair(p->vkCode, shiftState)];
-                if ((wParam == WM_KEYDOWN) || (wParam == WM_SYSKEYDOWN))
-                    WriteUnicode(unicodeChar, false);
-                else if ((wParam == WM_KEYUP) || (wParam == WM_SYSKEYUP))
-                    WriteUnicode(unicodeChar, true);
-            }
-
-            // Handle numeric keys
-            else if (fEatKeystroke = ((p->vkCode >= 0x30 && p->vkCode <= 0x39) || (p->vkCode >= 0x60 && p->vkCode <= 0x69)))
-            {
-                DWORD baseCode = (p->vkCode >= 0x60) ? p->vkCode - 0x30 : p->vkCode;
-                WORD unicodeChar = FW_ZERO + baseCode - 0x30;
-                if ((wParam == WM_KEYDOWN) || (wParam == WM_SYSKEYDOWN))
-                    WriteUnicode(unicodeChar, false);
-                else if ((wParam == WM_KEYUP) || (wParam == WM_SYSKEYUP))
-                    WriteUnicode(unicodeChar, true);
-            }
             break;
         }
     }
@@ -122,12 +131,12 @@ void populateSymbolMap()
     symbolMap[std::make_pair(0xDB, true)] = 0xFF5B;  // '{'
     symbolMap[std::make_pair(0xDC, true)] = 0xFF5C;  // '|'
     symbolMap[std::make_pair(0xDD, true)] = 0xFF5D;  // '}'
-    symbolMap[std::make_pair(0xC0, true)] = 0xFF40;  // '~'
+    symbolMap[std::make_pair(0xC0, true)] = 0xFF5E;  // '~'
 }
 
 int main()
 {
-    // Setup non alphabet keys"""
+    // Setup non alphabet keys
     populateSymbolMap();
 
     // Set up the keyboard hook
