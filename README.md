@@ -5,3 +5,6 @@ A short script which maps your keyboard characters to its [fullwidth alternative
 Currently only works with Windows as it uses the Windows API.
 
 ## Comparison
+
+![](https://github.com/Benjababe/Fullwidth-Keyboard-Mapper/blob/main/media/before.gif)
+![](https://github.com/Benjababe/Fullwidth-Keyboard-Mapper/blob/main/media/after.gif)
